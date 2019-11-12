@@ -1,0 +1,26 @@
+{
+    "logs": [
+        {
+            "outputFile": "C:\\Users\\gupta\\Downloads\\New\\Unity\\Major_Final\\Temp\\gradleOut\\build\\intermediates\\incremental\\mergeReleaseResources\\merged.dir\\values-in\\values-in.xml",
+            "map": [
+                {
+                    "source": "C:\\Users\\gupta\\.gradle\\caches\\transforms-1\\files-1.1\\arcore_client.aar\\b7b64951bb0af72b114dbf3959bc65c1\\res\\values-in\\values.xml",
+                    "from": {
+                        "startLines": "4,5,6,7,8",
+                        "startColumns": "0,0,0,0,0",
+                        "startOffsets": "190,236,288,401,515",
+                        "endColumns": "45,51,112,113,84",
+                        "endOffsets": "235,287,400,514,599"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6",
+                        "startColumns": "4,4,4,4,4",
+                        "startOffsets": "55,105,161,278,396",
+                        "endColumns": "49,55,116,117,88",
+                        "endOffsets": "100,156,273,391,480"
+                    }
+                }
+            ]
+        }
+    ]
+}
