@@ -1,5 +1,5 @@
 sceneSetups:
-- path: C:/Users/gupta/Downloads/Old/Projects/MAJOR/Project/New/ARRuler/Assets/Scenes/ARRuler.unity
+- path: Assets/GoogleARCore/Examples/HelloAR/Scenes/HelloAR.unity
   isLoaded: 1
   isActive: 1
   isSubScene: 0

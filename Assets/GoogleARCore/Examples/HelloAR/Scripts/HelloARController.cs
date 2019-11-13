@@ -25,6 +25,10 @@ namespace GoogleARCore.Examples.HelloAR
     using GoogleARCore.Examples.Common;
     using UnityEngine;
     using UnityEngine.EventSystems;
+    using UnityEngine.SceneManagement;
+    using Firebase;
+    using Firebase.Database;
+    using Firebase.Unity.Editor;
 
 #if UNITY_EDITOR
     // Set up touch input propagation while using Instant Preview in the editor.
@@ -43,19 +47,19 @@ namespace GoogleARCore.Examples.HelloAR
         public Camera FirstPersonCamera;
 
         /// <summary>
-        /// A prefab to place when a raycast from a user touch hits a vertical plane.
+        /// A prefab for tracking and visualizing detected planes.
         /// </summary>
-        public GameObject GameObjectVerticalPlanePrefab;
-
-        /// <summary>
-        /// A prefab to place when a raycast from a user touch hits a horizontal plane.
-        /// </summary>
-        public GameObject GameObjectHorizontalPlanePrefab;
+        public GameObject DetectedPlanePrefab;
 
         /// <summary>
         /// A prefab to place when a raycast from a user touch hits a feature point.
         /// </summary>
         public GameObject GameObjectPointPrefab;
+
+        /// <summary>
+        /// A gameobject parenting UI for displaying the "searching for planes" snackbar.
+        /// </summary>
+        public GameObject SearchingForPlaneUI;
 
         /// <summary>
         /// The rotation in degrees need to apply to prefab when it is placed.
@@ -67,6 +71,66 @@ namespace GoogleARCore.Examples.HelloAR
         /// otherwise false.
         /// </summary>
         private bool m_IsQuitting = false;
+
+        /// <summary>
+        /// A list to hold all planes ARCore is tracking in the current frame. This object is used across
+        /// the application to avoid per-frame allocations.
+        /// </summary>
+        private List<DetectedPlane> m_AllPlanes = new List<DetectedPlane>();
+
+        public List<GameObject> Points = new List<GameObject>();
+        public List<string> Angles = new List<string>();
+        public List<string> distance = new List<string>();
+        public List<GameObject> measures = new List<GameObject>();
+        public GameObject Text;
+
+        public void FirebaseSend()
+        {
+            Debug.Log("Sending data to Firebase");
+            FirebaseApp.DefaultInstance.SetEditorDatabaseUrl("https://major-final.firebaseio.com/");
+            DatabaseReference reference = FirebaseDatabase.DefaultInstance.RootReference;
+            FirebaseStop();
+            int i = 0;
+            foreach (string d in distance)
+            {
+                reference.Child("cmd").Child(i++ + "").SetValueAsync(d);
+            }
+            i = 0;
+            foreach (string a in Angles)
+            {
+                reference.Child("angle").Child(i++ + "").SetValueAsync(a);
+            }
+            reference.Child("set").SetValueAsync(distance.Count + "");
+            reference.Child("bool").SetValueAsync(true);
+        }
+
+        public void FirebaseStop()
+        {
+            FirebaseApp.DefaultInstance.SetEditorDatabaseUrl("https://major-final.firebaseio.com/");
+            DatabaseReference reference = FirebaseDatabase.DefaultInstance.RootReference;
+            reference.Child("cmd").SetValueAsync(null);
+            reference.Child("angle").SetValueAsync(null);
+            reference.Child("set").SetValueAsync("0");
+            reference.Child("bool").SetValueAsync(false);
+        }
+
+        public void ResetScene()
+        {
+            FirebaseStop();
+            // SceneManager.LoadScene("ARRuler");
+            foreach (GameObject go in Points)
+            {
+                Destroy(go);
+            }
+            foreach (GameObject po in measures)
+            {
+                Destroy(po);
+            }
+            Points.Clear();
+            Angles.Clear();
+            distance.Clear();
+            measures.Clear();
+        }
 
         /// <summary>
         /// The Unity Awake() method.
@@ -85,15 +149,23 @@ namespace GoogleARCore.Examples.HelloAR
         {
             _UpdateApplicationLifecycle();
 
-            // If the player has not touched the screen, we are done with this update.
-            Touch touch;
-            if (Input.touchCount < 1 || (touch = Input.GetTouch(0)).phase != TouchPhase.Began)
+            // Hide snackbar when currently tracking at least one plane.
+            Session.GetTrackables<DetectedPlane>(m_AllPlanes);
+            bool showSearchingUI = true;
+            for (int i = 0; i < m_AllPlanes.Count; i++)
             {
-                return;
+                if (m_AllPlanes[i].TrackingState == TrackingState.Tracking)
+                {
+                    showSearchingUI = false;
+                    break;
+                }
             }
 
-            // Should not handle input if the player is pointing on UI.
-            if (EventSystem.current.IsPointerOverGameObject(touch.fingerId))
+            SearchingForPlaneUI.SetActive(showSearchingUI);
+
+            // If the player has not touched the screen, we are done with this update.
+            Touch touch;
+            if (Input.touchCount < 1 || (touch = Input.GetTouch(0)).phase != TouchPhase.Began || EventSystem.current.IsPointerOverGameObject(Input.GetTouch(0).fingerId))
             {
                 return;
             }
@@ -114,43 +186,46 @@ namespace GoogleARCore.Examples.HelloAR
                     Debug.Log("Hit at back of the current DetectedPlane");
                 }
                 else
-                {
-                    // Choose the prefab based on the Trackable that got hit.
-                    GameObject prefab;
-                    if (hit.Trackable is FeaturePoint)
+                {   
+                    // Instantiate Andy model at the hit pose.
+                    var arObject = Instantiate(GameObjectPointPrefab, hit.Pose.position, hit.Pose.rotation);
+
+                    Points.Add(arObject);
+                    if (Points.Count >= 2)
                     {
-                        prefab = GameObjectPointPrefab;
-                    }
-                    else if (hit.Trackable is DetectedPlane)
-                    {
-                        DetectedPlane detectedPlane = hit.Trackable as DetectedPlane;
-                        if (detectedPlane.PlaneType == DetectedPlaneType.Vertical)
+                        arObject.GetComponent<LineRenderer>().positionCount = 2;
+                        arObject.GetComponent<LineRenderer>().SetPosition(0, arObject.transform.position);
+                        arObject.GetComponent<LineRenderer>().SetPosition(1, Points[Points.Count - 2].transform.position);
+
+                        var temp = Instantiate(Text, (arObject.transform.position + Points[Points.Count - 2].transform.position) / 2, Quaternion.identity);
+                        measures.Add(temp);
+                        temp.transform.LookAt(arObject.transform.position);
+                        temp.transform.localEulerAngles = new Vector3(90, temp.transform.localEulerAngles.y + 90, 2);
+                        string f = (Vector3.Distance(arObject.transform.position, Points[Points.Count - 2].transform.position) * 100).ToString("0.00");
+
+                        distance.Add(f);
+                        temp.GetComponent<TextMesh>().text = f + " cm";
+
+                        if (Points.Count >= 3)
                         {
-                            prefab = GameObjectVerticalPlanePrefab;
-                        }
-                        else
-                        {
-                            prefab = GameObjectHorizontalPlanePrefab;
+                            // Gets a vector that points from the first position to the next.
+                            var vec1 = Points[Points.Count - 2].transform.position - Points[Points.Count - 3].transform.position;
+                            var vec2 = Points[Points.Count - 1].transform.position - Points[Points.Count - 2].transform.position;
+                            string angle = (Vector3.SignedAngle(vec1, vec2, Vector3.up)).ToString("0.00");
+                            
+                            Angles.Add(angle);
                         }
                     }
-                    else
-                    {
-                        prefab = GameObjectHorizontalPlanePrefab;
-                    }
 
-                    // Instantiate prefab at the hit pose.
-                    var gameObject = Instantiate(prefab, hit.Pose.position, hit.Pose.rotation);
+                    // Compensate for the hitPose rotation facing away from the raycast (i.e. camera).
+                    arObject.transform.Rotate(0, k_PrefabRotation, 0, Space.Self);
 
-                    // Compensate for the hitPose rotation facing away from the raycast (i.e.
-                    // camera).
-                    gameObject.transform.Rotate(0, k_PrefabRotation, 0, Space.Self);
-
-                    // Create an anchor to allow ARCore to track the hitpoint as understanding of
-                    // the physical world evolves.
+                    // Create an anchor to allow ARCore to track the hitpoint as understanding of the physical
+                    // world evolves.
                     var anchor = hit.Trackable.CreateAnchor(hit.Pose);
 
-                    // Make game object a child of the anchor.
-                    gameObject.transform.parent = anchor.transform;
+                    // Make Andy model a child of the anchor.
+                    arObject.transform.parent = anchor.transform;
                 }
             }
         }
@@ -169,7 +244,8 @@ namespace GoogleARCore.Examples.HelloAR
             // Only allow the screen to sleep when not tracking.
             if (Session.Status != SessionStatus.Tracking)
             {
-                Screen.sleepTimeout = SleepTimeout.SystemSetting;
+                const int lostTrackingSleepTimeout = 15;
+                Screen.sleepTimeout = lostTrackingSleepTimeout;
             }
             else
             {
